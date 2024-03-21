@@ -8,7 +8,6 @@ import time
 from openpyxl import Workbook
 from openpyxl import load_workbook
 import signal
-import traceback
 
 def save_reviews_and_exit(driver, workbook, file_path, total_reviews_collected):
     workbook.save(filename=file_path)
@@ -46,11 +45,13 @@ def initialize_workbook(file_path):
         workbook = Workbook()
         worksheet = workbook.active
         worksheet.title = 'Reviews'
-        worksheet.append(['Item', 'Product Name', 'Total Ratings', 'Price After Discount', 'Actual Price', 'Discount Percentage', 'Review'])
-
+        worksheet.append(['Item', 'Product Name', 'Brand Name', 'Total Ratings', 'Price After Discount', 'Actual Price',
+                          'Discount Percentage', 'Review', '5 Star %', '4 Star %', '3 Star %', '2 Star %', '1 Star %',
+                          'Chat Response Rate', 'Ship on Time', 'Sold By', 'Cash on Delivery', 'Warranty'])
     if worksheet.max_row == 1 and all(cell.value is None for cell in worksheet[1]):
-        worksheet.append(['Item', 'Product Name', 'Total Ratings', 'Price After Discount', 'Actual Price', 'Discount Percentage', 'Review'])
-
+        worksheet.append(['Item', 'Product Name', 'Brand Name', 'Total Ratings', 'Price After Discount', 'Actual Price',
+                          'Discount Percentage', 'Review', '5 Star %', '4 Star %', '3 Star %', '2 Star %', '1 Star %',
+                          'Chat Response Rate', 'Ship on Time', 'Sold By', 'Cash on Delivery', 'Warranty'])
     return workbook, worksheet
 
 def scroll_to_reviews(driver):
@@ -67,73 +68,105 @@ def scroll_to_reviews(driver):
 
 def collect_product_info(driver):
     product_name = ""
-    total_ratings = "0"
-    price_after_discount = "0"
-    actual_price = "0"
-    discount_percentage = "0"
-
+    brand_name = ""
+    total_ratings = 0
+    price_after_discount = 0
+    actual_price = 0
+    discount_percentage = 0
+    chat_response_rate = 0
+    ship_on_time = "Not enough data"
+    sold_by = ""
+    cash_on_delivery = "No"
+    warranty = "Warranty not available"
     try:
         product_name_element = driver.find_element(By.CSS_SELECTOR, ".pdp-mod-product-badge-title")
         product_name = product_name_element.text
-    except Exception as e:
-        print(f"Error occurred while collecting product name: {str(e)}")
-        print(traceback.format_exc())
-
+    except:
+        pass
+    try:
+        brand_name_element = driver.find_element(By.CSS_SELECTOR, ".pdp-product-brand__brand-link")
+        brand_name = brand_name_element.text
+    except:
+        pass
     try:
         total_ratings_element = driver.find_element(By.CSS_SELECTOR, ".pdp-review-summary__link")
-        total_ratings = total_ratings_element.text.split()[0]
-    except Exception as e:
-        print(f"Error occurred while collecting total ratings: {str(e)}")
-        print(traceback.format_exc())
-
+        total_ratings = int(total_ratings_element.text.split()[0])
+    except:
+        pass
     try:
         price_after_discount_element = driver.find_element(By.CSS_SELECTOR, ".pdp-price_type_normal")
-        price_after_discount = price_after_discount_element.text
-    except Exception as e:
-        print(f"Error occurred while collecting price after discount: {str(e)}")
-        print(traceback.format_exc())
-
+        price_after_discount = float(price_after_discount_element.text.replace("৳", "").replace(",", ""))
+    except:
+        pass
     try:
         actual_price_element = driver.find_element(By.CSS_SELECTOR, ".pdp-price_type_deleted")
-        actual_price = actual_price_element.text
-    except Exception as e:
-        print(f"Error occurred while collecting actual price: {str(e)}")
-        print(traceback.format_exc())
-
+        actual_price = float(actual_price_element.text.replace("৳", "").replace(",", ""))
+    except:
+        pass
     try:
         discount_percentage_element = driver.find_element(By.CSS_SELECTOR, ".pdp-product-price__discount")
-        discount_percentage = discount_percentage_element.text
-    except Exception as e:
-        print(f"Error occurred while collecting discount percentage: {str(e)}")
-        print(traceback.format_exc())
+        discount_percentage = abs(int(discount_percentage_element.text.replace("-", "").replace("%", "")))
+    except:
+        pass
+    try:
+        chat_response_rate_element = driver.find_element(By.CSS_SELECTOR, ".seller-info-value")
+        chat_response_rate = int(chat_response_rate_element.text.replace("%", ""))
+    except:
+        pass
+    try:
+        ship_on_time_element = driver.find_element(By.XPATH, "//div[contains(@class, 'info-content')]/div[contains(text(), 'Ship on Time')]/following-sibling::div")
+        ship_on_time = ship_on_time_element.text
+    except:
+        pass
+    try:
+        sold_by_element = driver.find_element(By.CSS_SELECTOR, ".seller-name__detail-name")
+        sold_by = sold_by_element.text
+    except:
+        pass
+    try:
+        cash_on_delivery_element = driver.find_element(By.XPATH, "//div[contains(@class, 'delivery-option-item_type_COD')]")
+        cash_on_delivery = "Yes"
+    except:
+        pass
+    try:
+        warranty_element = driver.find_element(By.XPATH, "//div[contains(@class, 'delivery-option-item_type_noWarranty')]")
+        warranty = "Warranty not available"
+    except:
+        warranty = "Warranty available"
+    return product_name, brand_name, total_ratings, price_after_discount, actual_price, discount_percentage, chat_response_rate, ship_on_time, sold_by, cash_on_delivery, warranty
 
-    return product_name, total_ratings, price_after_discount, actual_price, discount_percentage
+def collect_star_percentages(driver):
+    star_percentages = []
+    try:
+        star_percentage_elements = driver.find_elements(By.CSS_SELECTOR, ".review-info-right .percent")
+        for element in star_percentage_elements:
+            percentage = int(element.text.strip('%'))
+            star_percentages.append(percentage)
+    except:
+        pass
+    return star_percentages
 
 def collect_reviews(driver, user_input_item, worksheet, max_pages, total_reviews_collected):
     current_page = 1
     column_headers = [cell.value for cell in worksheet[1]]
-
     while current_page <= max_pages:
         try:
             reviews = WebDriverWait(driver, 10).until(
                 EC.presence_of_all_elements_located((By.CLASS_NAME, "review-content-sl"))
             )
-        except Exception as e:
-            print(f"Error occurred while waiting for reviews: {str(e)}")
-            print(traceback.format_exc())
+        except:
             break
-
-        product_name, total_ratings, price_after_discount, actual_price, discount_percentage = collect_product_info(driver)
+        product_name, brand_name, total_ratings, price_after_discount, actual_price, discount_percentage, chat_response_rate, ship_on_time, sold_by, cash_on_delivery, warranty = collect_product_info(driver)
+        star_percentages = collect_star_percentages(driver)
         for review in reviews:
             review_text = review.text
-            row_data = [user_input_item, product_name, total_ratings, price_after_discount, actual_price, discount_percentage, review_text]
+            row_data = [user_input_item, product_name, brand_name, total_ratings, price_after_discount, actual_price,
+                        discount_percentage, review_text] + star_percentages + [chat_response_rate, ship_on_time, sold_by, cash_on_delivery, warranty]
             worksheet.append([value for value, header in zip(row_data, column_headers)])
             total_reviews_collected += 1
         print(f"\rCollecting reviews on page {current_page} of the item's review. {len(reviews)} reviews collected. Total number of reviews collected: {total_reviews_collected}", end="", flush=True)
-        
         if current_page == max_pages:
             break
-
         try:
             pagination_items = driver.find_elements(By.CSS_SELECTOR, ".ant-pagination-item")
             next_page_link = None
@@ -147,11 +180,8 @@ def collect_reviews(driver, user_input_item, worksheet, max_pages, total_reviews
                 time.sleep(2)
             else:
                 break
-        except Exception as e:
-            print(f"Error occurred while navigating to the next page: {str(e)}")
-            print(traceback.format_exc())
+        except:
             break
-
     return total_reviews_collected
 
 def main():
@@ -182,11 +212,8 @@ def main():
                 continue
             total_reviews_collected = collect_reviews(driver, user_input_item, worksheet, max_pages, total_reviews_collected)
             product_index += 1
-        except Exception as e:
-            print(f"Error occurred while processing products: {str(e)}")
-            print(traceback.format_exc())
+        except:
             break
-
     save_reviews_and_exit(driver, workbook, file_path, total_reviews_collected)
 
 if __name__ == "__main__":
